@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Categorias {
+  id        String      @id @default(uuid()) @db.Uuid
+  nombre    String      @unique @db.VarChar(80)
+  productos Productos[]
+}
+
+model Autores {
+  id        String      @id @default(uuid()) @db.Uuid
+  nombre    String      @db.VarChar(45)
+  productos Productos[]
+}
+
+model Editoriales {
+  id        String      @id @default(uuid()) @db.Uuid
+  nombre    String      @unique @db.VarChar(45)
+  productos Productos[]
+}
+
+model Tipos {
+  id        String      @id @default(uuid()) @db.Uuid
+  nombre    String      @unique @db.VarChar(45)
+  productos Productos[]
+}
+
+model Productos {
+  id                String             @id @default(uuid()) @db.Uuid
+  nombre            String             @db.VarChar(100)
+  existencias       Int
+  fecha_publicacion DateTime           @db.Date
+  id_tipo           String             @db.Uuid
+  id_autor          String             @db.Uuid
+  id_editorial      String             @db.Uuid
+  id_categoria      String             @db.Uuid
+  imagen            String             @default("none") @db.VarChar(200)
+  precio            Float              @default(30000) 
+  carrito           Carritos[]
+  detallesPedido    Detalles_Pedidos[]
+  autor             Autores            @relation(fields: [id_autor], references: [id])
+  categoria         Categorias         @relation(fields: [id_categoria], references: [id])
+  editorial         Editoriales        @relation(fields: [id_editorial], references: [id])
+  tipo              Tipos              @relation(fields: [id_tipo], references: [id])
+}
+
+model Clientes {
+  id                String     @id @default(uuid()) @db.Uuid
+  id_usuario        String     @unique @db.Uuid
+  cedula            String     @unique @db.VarChar(30)
+  nombre            String     @db.VarChar(45)
+  direccion         String     @db.VarChar(200)
+  activo            Boolean
+  fecha_eliminacion DateTime?  @db.Date
+  carritos          Carritos[]
+  usuario           Usuarios   @relation(fields: [id_usuario], references: [id])
+  pedidos           Pedidos[]
+}
+
+model Empleados {
+  id                String    @id @default(uuid()) @db.Uuid
+  id_usuario        String    @unique @db.Uuid
+  cedula            String    @unique @db.VarChar(30)
+  nombre            String    @db.VarChar(45)
+  activo            Boolean
+  fecha_terminacion DateTime? @db.Date
+  usuario           Usuarios  @relation(fields: [id_usuario], references: [id])
+  pedidos           Pedidos[]
+}
+
+model Usuarios {
+  id       String     @id @default(uuid()) @db.Uuid
+  usuario  String     @db.VarChar(25)
+  clave    String
+  correo   String     @unique @db.VarChar(60)
+  cliente  Clientes?
+  empleado Empleados?
+}
+
+model Estados {
+  id      String    @id @default(uuid()) @db.Uuid
+  nombre  String    @unique @db.VarChar(30)
+  pedidos Pedidos[]
+}
+
+model Pedidos {
+  id                 String             @id @default(uuid()) @db.Uuid
+  precio             Float
+  cantidad_productos Int
+  fecha_pedido       DateTime
+  id_cliente         String             @db.Uuid
+  id_empleado        String             @db.Uuid
+  id_estado          String             @db.Uuid
+  detalles           Detalles_Pedidos[]
+  cliente            Clientes           @relation(fields: [id_cliente], references: [id])
+  empleado           Empleados          @relation(fields: [id_empleado], references: [id])
+  estado             Estados            @relation(fields: [id_estado], references: [id])
+}
+
+model Detalles_Pedidos {
+  id_pedido   String    @db.Uuid
+  id_producto String    @db.Uuid
+  cantidad    Int
+  precio      Float
+  pedido      Pedidos   @relation(fields: [id_pedido], references: [id], onDelete: Cascade)
+  producto    Productos @relation(fields: [id_producto], references: [id])
+
+  @@id([id_pedido, id_producto])
+}
+
+model Carritos {
+  id_cliente  String    @db.Uuid
+  id_producto String    @db.Uuid
+  cantidad    Int       @default(1)
+  cliente     Clientes  @relation(fields: [id_cliente], references: [id], onDelete: Cascade)
+  producto    Productos @relation(fields: [id_producto], references: [id])
+
+  @@id([id_cliente, id_producto])
+}
