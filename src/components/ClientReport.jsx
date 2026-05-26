@@ -179,11 +179,8 @@ function ClientReport({
                 }
               >
                 <option value="">Estado</option>
-                {estados.map((status) => (
-                  <option key={status.id} value={status.nombre}>
-                    {status.nombre}
-                  </option>
-                ))}
+                <option value="Aceptado">Aceptado</option>
+                <option value="Cancelado">Cancelado</option>
               </select>
             </div>
           </div>

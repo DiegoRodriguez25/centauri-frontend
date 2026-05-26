@@ -81,3 +81,9 @@ export const createProduct = (formData) =>
     method: "POST",
     body: formData,
   });
+
+export const updateProduct = (id, data) =>
+  api(`/api/products/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
