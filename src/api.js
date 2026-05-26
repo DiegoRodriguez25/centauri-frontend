@@ -2,13 +2,17 @@ const BASE_URL = "https://centauri-backend.onrender.com";
 
 const api = async (endpoint, options = {}) => {
   try {
+    const isFormData = options.body instanceof FormData;
+
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
+      headers: isFormData
+        ? { ...options.headers }
+        : {
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
     });
 
     if (!response.ok) {
@@ -18,7 +22,6 @@ const api = async (endpoint, options = {}) => {
 
     return await response.json();
   } catch (error) {
-    // Si es error de base de datos, reintenta una vez
     if (error.message?.includes("Base de datos no disponible")) {
       return api(endpoint, options);
     }
@@ -45,12 +48,36 @@ export const getProducts = (filtros = {}) => {
 
 export const getProductById = (id) => api(`/api/products/${id}`);
 
-export const getCart = () => api("/api/cart");
+export const getCart = () => api("/api/carts");
 
-export const addToCart = (idProducto) =>
-  api(`/api/cart/${idProducto}`, { method: "POST" });
+export const addToCart = (idProducto, cantidad) =>
+  api(`/api/carts/${idProducto}`, {
+    method: "POST",
+    body: JSON.stringify({ cantidad }),
+  });
 
 export const removeFromCart = (idProducto) =>
-  api(`/api/cart/${idProducto}`, { method: "DELETE" });
+  api(`/api/carts/${idProducto}`, { method: "DELETE" });
 
 export const createOrder = () => api("/api/orders", { method: "POST" });
+
+export const getOrders = () => api("/api/orders");
+
+export const getEmployeeOrders = () => api("/api/orders/employee");
+
+export const updateOrderStatus = (idPedido, idEstado) =>
+  api(`/api/orders/${idPedido}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ id_estado: idEstado }),
+  });
+
+export const getAuthors = () => api("/api/authors");
+export const getEditorials = () => api("/api/editorials");
+export const getCategories = () => api("/api/categories");
+export const getTypes = () => api("/api/types");
+
+export const createProduct = (formData) =>
+  api("/api/products", {
+    method: "POST",
+    body: formData,
+  });

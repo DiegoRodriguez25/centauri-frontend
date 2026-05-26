@@ -18,7 +18,16 @@ import {
   pedidos,
   usuarios,
 } from "./data/books";
-import { getProducts } from "./api";
+import {
+  getProducts,
+  createOrder,
+  addToCart as apiAddToCart,
+  removeFromCart as apiRemoveFromCart,
+  getCart,
+  getOrders,
+  getEmployeeOrders,
+  updateOrderStatus,
+} from "./api";
 
 const initialPriceBounds = { min: 0, max: 100000 };
 
@@ -45,6 +54,58 @@ const defaultClientFilters = {
   status: "",
 };
 
+// Normaliza pedidos del cliente desde la API
+function normalizeOrdersFromAPI(data) {
+  const rows = [];
+  for (const pedido of data) {
+    for (const detalle of pedido.detalles) {
+      rows.push({
+        id_pedido: pedido.id,
+        id_producto: detalle.id_producto,
+        producto: detalle.producto?.nombre || "Producto eliminado",
+        cliente: pedido.cliente?.nombre || "Cliente",
+        id_cliente: pedido.id_cliente,
+        categoria: detalle.producto?.categoria?.nombre || "Sin categoria",
+        valor: detalle.precio * detalle.cantidad,
+        cantidad: detalle.cantidad,
+        precio_unitario: detalle.precio,
+        fecha: pedido.fecha_pedido
+          ? new Date(pedido.fecha_pedido).toISOString().slice(0, 10)
+          : "",
+        estado: pedido.estado?.nombre || "Sin estado",
+        id_estado: pedido.id_estado,
+      });
+    }
+  }
+  return rows.sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+
+// Normaliza pedidos del empleado desde la API
+function normalizeEmployeeOrdersFromAPI(data) {
+  const rows = [];
+  for (const pedido of data) {
+    for (const detalle of pedido.detalles) {
+      rows.push({
+        id_pedido: pedido.id,
+        id_producto: detalle.id_producto,
+        producto: detalle.producto?.nombre || "Producto eliminado",
+        cliente: pedido.cliente?.nombre || "Cliente",
+        id_cliente: pedido.id_cliente,
+        categoria: detalle.producto?.categoria?.nombre || "Sin categoria",
+        valor: detalle.precio * detalle.cantidad,
+        cantidad: detalle.cantidad,
+        precio_unitario: detalle.precio,
+        fecha: pedido.fecha_pedido
+          ? new Date(pedido.fecha_pedido).toISOString().slice(0, 10)
+          : "",
+        estado: pedido.estado?.nombre || "Sin estado",
+        id_estado: pedido.id_estado,
+      });
+    }
+  }
+  return rows.sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+
 function App() {
   const [catalogBooks, setCatalogBooks] = useState([]);
   const [cart, setCart] = usePersistentState("centauri_cart", []);
@@ -54,6 +115,10 @@ function App() {
     "centauri_order_details",
     detallesPedidos,
   );
+  const [clientOrderRows, setClientOrderRows] = useState([]);
+  const [employeeOrderRows, setEmployeeOrderRows] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingEmployeeOrders, setLoadingEmployeeOrders] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -79,13 +144,56 @@ function App() {
           existencias: p.existencias,
           img:
             p.imagen && p.imagen !== "none"
-              ? `https://uvbncfsifguddloeabsu.supabase.co/storage/v1/object/public/Centauri-books/${p.imagen}`
+              ? p.imagen.startsWith("http")
+                ? p.imagen
+                : `https://uvbncfsifguddloeabsu.supabase.co/storage/v1/object/public/Centauri-books/${p.imagen}`
               : "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=700&q=80",
         }));
         setCatalogBooks(normalized);
       })
       .catch(console.error);
   }, [session]);
+
+  const fetchClientOrders = async () => {
+    if (!session?.id_cliente) return;
+    setLoadingOrders(true);
+    try {
+      const result = await getOrders();
+      const rows = normalizeOrdersFromAPI(result.data || []);
+      setClientOrderRows(rows);
+    } catch (error) {
+      showNotice(error.message || "Error al cargar los pedidos.");
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const fetchEmployeeOrders = async () => {
+    if (!session?.id_empleado) return;
+    setLoadingEmployeeOrders(true);
+    try {
+      const result = await getEmployeeOrders();
+      const rows = normalizeEmployeeOrdersFromAPI(result.data || []);
+      setEmployeeOrderRows(rows);
+    } catch (error) {
+      showNotice(error.message || "Error al cargar los pedidos.");
+    } finally {
+      setLoadingEmployeeOrders(false);
+    }
+  };
+
+  // Reemplaza este UUID con el id real del estado "Cancelado" en tu tabla Estados de Neon
+  const ID_ESTADO_CANCELADO = "REEMPLAZA_CON_UUID_CANCELADO";
+
+  const handleCancelOrder = async (idPedido) => {
+    try {
+      await updateOrderStatus(idPedido, ID_ESTADO_CANCELADO);
+      showNotice("Pedido cancelado correctamente.");
+      await fetchEmployeeOrders();
+    } catch (error) {
+      showNotice(error.message || "Error al cancelar el pedido.");
+    }
+  };
 
   const priceBounds = useMemo(
     () => ({
@@ -122,8 +230,8 @@ function App() {
   const adminRows = useMemo(() => {
     const search = adminFilters.search.toLowerCase();
     const client = adminFilters.client.toLowerCase();
-    return enrichedOrders.filter((row) => {
-      const isSolicited = row.estado === "solicitado";
+    return employeeOrderRows.filter((row) => {
+      const isActive = row.estado?.toLowerCase() !== "cancelado";
       const matchesSearch =
         !search ||
         `${row.producto} ${row.cliente} ${row.categoria} ${row.id_producto}`
@@ -140,14 +248,20 @@ function App() {
         !client ||
         `${row.cliente} ${row.id_cliente}`.toLowerCase().includes(client);
       return (
-        isSolicited &&
+        isActive &&
         matchesSearch &&
         matchesDate &&
         matchesCategory &&
         matchesClient
       );
     });
-  }, [adminFilters, enrichedOrders]);
+  }, [adminFilters, employeeOrderRows]);
+
+  const cancelledRows = useMemo(() => {
+    return employeeOrderRows.filter(
+      (row) => row.estado?.toLowerCase() === "cancelado",
+    );
+  }, [employeeOrderRows]);
 
   const adminChart = useMemo(
     () => summarizeByCategory(adminRows, "valor", catalogBooks),
@@ -155,10 +269,8 @@ function App() {
   );
 
   const clientRows = useMemo(() => {
-    if (!session?.id_cliente) return [];
     const search = clientFilters.search.toLowerCase();
-    return enrichedOrders.filter((row) => {
-      const isOwnOrder = row.id_cliente === session.id_cliente;
+    return clientOrderRows.filter((row) => {
       const matchesSearch =
         !search ||
         `${row.producto} ${row.categoria} ${row.id_producto} ${row.id_pedido}`
@@ -173,33 +285,41 @@ function App() {
         !clientFilters.category || row.categoria === clientFilters.category;
       const matchesStatus =
         !clientFilters.status || row.estado === clientFilters.status;
-      return (
-        isOwnOrder &&
-        matchesSearch &&
-        matchesDate &&
-        matchesCategory &&
-        matchesStatus
-      );
+      return matchesSearch && matchesDate && matchesCategory && matchesStatus;
     });
-  }, [clientFilters, enrichedOrders, session]);
+  }, [clientFilters, clientOrderRows]);
 
   const clientChart = useMemo(() => {
-    if (!session?.id_cliente) return [];
+    if (!clientRows.length) return [{ label: "Sin pedidos", value: 1 }];
     return summarizeByCategory(clientRows, "valor", catalogBooks);
-  }, [catalogBooks, clientRows, session]);
+  }, [catalogBooks, clientRows]);
 
-  const addToCart = (book) => {
+  const addToCart = async (book) => {
     if (session?.rol === "empleado") {
       showNotice("El carrito esta disponible para clientes.");
       return;
     }
+
+    const existing = cart.find((item) => item.id === book.id);
+    const newQty = existing ? existing.qty + 1 : 1;
+
+    if (existing && existing.qty >= book.existencias) {
+      showNotice("No hay mas existencias para este producto.");
+      return;
+    }
+
+    if (session?.id_cliente) {
+      try {
+        await apiAddToCart(book.id, newQty);
+      } catch (error) {
+        showNotice(error.message || "Error al agregar al carrito.");
+        return;
+      }
+    }
+
     setCart((previous) => {
-      const existing = previous.find((item) => item.id === book.id);
-      if (existing) {
-        if (existing.qty >= book.existencias) {
-          showNotice("No hay mas existencias para este producto.");
-          return previous;
-        }
+      const existingLocal = previous.find((item) => item.id === book.id);
+      if (existingLocal) {
         return previous.map((item) =>
           item.id === book.id ? { ...item, qty: item.qty + 1 } : item,
         );
@@ -208,10 +328,23 @@ function App() {
     });
   };
 
-  const removeOne = (id) => {
+  const removeOne = async (id) => {
+    const existing = cart.find((item) => item.id === id);
+    if (!existing) return;
+    const newQty = existing.qty - 1;
+    if (session?.id_cliente) {
+      try {
+        if (newQty === 0) {
+          await apiRemoveFromCart(id);
+        } else {
+          await apiAddToCart(id, newQty);
+        }
+      } catch (error) {
+        showNotice(error.message || "Error al actualizar el carrito.");
+        return;
+      }
+    }
     setCart((previous) => {
-      const existing = previous.find((item) => item.id === id);
-      if (!existing) return previous;
       if (existing.qty === 1) return previous.filter((item) => item.id !== id);
       return previous.map((item) =>
         item.id === id ? { ...item, qty: item.qty - 1 } : item,
@@ -219,111 +352,169 @@ function App() {
     });
   };
 
-  const updateQuantity = (id, quantity) => {
+  const updateQuantity = async (id, quantity) => {
+    const nextQty = Math.max(
+      0,
+      Math.min(
+        Number(quantity) || 0,
+        cart.find((item) => item.id === id)?.existencias ?? 0,
+      ),
+    );
+    if (session?.id_cliente) {
+      try {
+        if (nextQty === 0) {
+          await apiRemoveFromCart(id);
+        } else {
+          await apiAddToCart(id, nextQty);
+        }
+      } catch (error) {
+        showNotice(error.message || "Error al actualizar el carrito.");
+        return;
+      }
+    }
     setCart((previous) =>
       previous.flatMap((item) => {
         if (item.id !== id) return [item];
-        const nextQty = Math.max(
-          0,
-          Math.min(Number(quantity) || 0, item.existencias),
-        );
         return nextQty === 0 ? [] : [{ ...item, qty: nextQty }];
       }),
     );
   };
 
-  const removeFromCart = (id) =>
+  const removeFromCart = async (id) => {
+    if (session?.id_cliente) {
+      try {
+        await apiRemoveFromCart(id);
+      } catch (error) {
+        showNotice(error.message || "Error al eliminar del carrito.");
+        return;
+      }
+    }
     setCart((previous) => previous.filter((item) => item.id !== id));
+  };
 
-  const cancelCart = () => {
+  const cancelCart = async () => {
+    if (session?.id_cliente) {
+      try {
+        await Promise.all(cart.map((item) => apiRemoveFromCart(item.id)));
+      } catch (error) {
+        showNotice(error.message || "Error al cancelar el carrito.");
+        return;
+      }
+    }
     setCart([]);
     setCartOpen(false);
     showNotice("Carrito cancelado y limpiado.");
   };
 
-  const checkout = () => {
+  const checkout = async () => {
     if (!session?.id_cliente) {
       showNotice("Inicia sesion como cliente para finalizar.");
       setAuthOpen(true);
       return;
     }
     if (!cart.length) return;
-    const orderId = Math.max(0, ...orders.map((order) => order.id)) + 1;
-    const detailStart =
-      Math.max(0, ...orderDetails.map((detail) => detail.id)) + 1;
-    const total = cart.reduce((sum, item) => sum + item.precio * item.qty, 0);
-    const quantity = cart.reduce((sum, item) => sum + item.qty, 0);
-    const today = new Date().toISOString().slice(0, 10);
-
-    const newOrder = {
-      id: orderId,
-      precio: total,
-      cantidad_productos: quantity,
-      fecha_pedido: today,
-      id_cliente: session.id_cliente,
-      id_empleado: 1,
-      id_estado: 1,
-    };
-
-    const newDetails = cart.map((item, index) => ({
-      id: detailStart + index,
-      id_pedido: orderId,
-      id_producto: item.id,
-      cantidad: item.qty,
-      precio: item.precio,
-    }));
-
-    setOrders((previous) => [newOrder, ...previous]);
-    setOrderDetails((previous) => [...newDetails, ...previous]);
-    setCart([]);
-    setCartOpen(false);
-    setActiveView("clientReport");
-    showNotice(`Pedido solicitado por ${formatCurrency(total)}.`);
+    try {
+      const result = await createOrder();
+      setCart([]);
+      setCartOpen(false);
+      setActiveView("clientReport");
+      showNotice(`Pedido realizado por ${formatCurrency(result.data.precio)}.`);
+      await fetchClientOrders();
+    } catch (error) {
+      showNotice(error.message || "Error al crear el pedido.");
+    }
   };
-  const handleLogin = (user) => {
+
+  const handleLogin = async (user) => {
     const rol = user.id_empleado ? "empleado" : "cliente";
     user.rol = rol;
     setSession(user);
-    setCart([]);
     setActiveView(rol === "empleado" ? "admin" : "catalog");
     showNotice(
       rol === "empleado"
         ? "Sesion de empleado activa."
         : "Sesion de cliente activa.",
     );
+
+    if (rol === "cliente") {
+      try {
+        const result = await getCart();
+        if (result.data && result.data.length > 0) {
+          const cartFromDB = result.data.map((item) => ({
+            id: item.id_producto,
+            nombre: item.producto.nombre,
+            autor: item.producto.autor?.nombre || "",
+            editorial: item.producto.editorial?.nombre || "",
+            categoria: item.producto.categoria?.nombre || "",
+            precio: item.producto.precio,
+            existencias: item.producto.existencias,
+            qty: item.cantidad,
+            img:
+              item.producto.imagen && item.producto.imagen !== "none"
+                ? item.producto.imagen.startsWith("http")
+                  ? item.producto.imagen
+                  : `https://uvbncfsifguddloeabsu.supabase.co/storage/v1/object/public/Centauri-books/${item.producto.imagen}`
+                : "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=700&q=80",
+          }));
+          setCart(cartFromDB);
+        } else {
+          setCart([]);
+        }
+      } catch {
+        setCart([]);
+      }
+      try {
+        const result = await getOrders();
+        const rows = normalizeOrdersFromAPI(result.data || []);
+        setClientOrderRows(rows);
+      } catch {
+        setClientOrderRows([]);
+      }
+    } else {
+      setCart([]);
+      setClientOrderRows([]);
+      // Cargar pedidos del empleado al hacer login
+      try {
+        const result = await getEmployeeOrders();
+        const rows = normalizeEmployeeOrdersFromAPI(result.data || []);
+        setEmployeeOrderRows(rows);
+      } catch {
+        setEmployeeOrderRows([]);
+      }
+    }
   };
 
   const logout = () => {
     setSession(null);
     setCart([]);
     setCatalogBooks([]);
+    setClientOrderRows([]);
+    setEmployeeOrderRows([]);
     setActiveView("catalog");
     showNotice("Sesion cerrada.");
   };
 
-  const addProduct = (product) => {
-    const normalizedPrice = Number(product.precio) || 0;
-    const selectedCategory = categorias.find(
-      (c) => c.nombre === product.categoria,
-    );
-    setCatalogBooks((previous) => [
-      {
-        ...product,
-        id: crypto.randomUUID(),
-        id_tipo: 1,
-        id_autor: 0,
-        id_editorial: 0,
-        id_categoria: selectedCategory?.id || 0,
-        precio: normalizedPrice,
-        anio: Number(product.anio) || new Date().getFullYear(),
-        existencias: Number(product.existencias) || 0,
-        img:
-          product.img ||
-          "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=700&q=80",
-      },
-      ...previous,
-    ]);
-    setActiveView("catalog");
+  const addProduct = () => {
+    getProducts()
+      .then((res) => {
+        const normalized = res.data.map((p) => ({
+          id: p.id,
+          nombre: p.nombre,
+          autor: p.autor.nombre,
+          editorial: p.editorial.nombre,
+          categoria: p.categoria.nombre,
+          precio: p.precio,
+          existencias: p.existencias,
+          img:
+            p.imagen && p.imagen !== "none"
+              ? p.imagen.startsWith("http")
+                ? p.imagen
+                : `https://uvbncfsifguddloeabsu.supabase.co/storage/v1/object/public/Centauri-books/${p.imagen}`
+              : "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=700&q=80",
+        }));
+        setCatalogBooks(normalized);
+      })
+      .catch(console.error);
     showNotice("Producto agregado al catalogo.");
   };
 
@@ -394,12 +585,15 @@ function App() {
             onFilterChange={(field, value) =>
               setClientFilters((previous) => ({ ...previous, [field]: value }))
             }
+            onRefresh={fetchClientOrders}
+            loading={loadingOrders}
           />
         )}
 
         {visibleView === "admin" && (
           <AdminPanel
             rows={adminRows}
+            cancelledRows={cancelledRows}
             chartData={adminChart}
             filters={adminFilters}
             onFilterChange={(field, value) => {
@@ -409,6 +603,9 @@ function App() {
             page={adminPage}
             onPageChange={setAdminPage}
             onAddProduct={addProduct}
+            onCancelOrder={handleCancelOrder}
+            onRefresh={fetchEmployeeOrders}
+            loading={loadingEmployeeOrders}
           />
         )}
 
@@ -473,7 +670,6 @@ function buildOrderRows(orderList, detailList, productList) {
       const client = clientes.find((item) => item.id === order?.id_cliente);
       const user = usuarios.find((item) => item.id === client?.id_usuario);
       const state = estados.find((item) => item.id === order?.id_estado);
-
       return {
         id_pedido: order?.id,
         id_producto: product?.id,

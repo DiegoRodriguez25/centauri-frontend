@@ -1,14 +1,17 @@
-import { CalendarDays, ClipboardList, Search } from "lucide-react";
+import { CalendarDays, ClipboardList, RefreshCw, Search } from "lucide-react";
 import ReportChart from "./ReportChart";
 import { categorias, estados, formatCurrency, formatDate } from "../data/books";
 
-function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
+function ClientReport({
+  rows,
+  chartData,
+  user,
+  filters,
+  onFilterChange,
+  onRefresh,
+  loading,
+}) {
   const orderIds = new Set(rows.map((row) => row.id_pedido));
-  const activeOrderIds = new Set(
-    rows
-      .filter((row) => row.estado === "solicitado")
-      .map((row) => row.id_pedido),
-  );
   const total = rows.reduce((sum, row) => sum + row.valor, 0);
 
   return (
@@ -25,22 +28,64 @@ function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
         >
           Cliente / Informe personal
         </p>
-        <h1
+        <div
           style={{
-            fontSize: "clamp(2rem, 4vw, 3.4rem)",
-            lineHeight: 1.1,
-            background: "linear-gradient(135deg, #fffffe, #a8a4e6)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            marginBottom: "8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
           }}
         >
-          Pedidos de {user?.nombre || "cliente"}
-        </h1>
-        <p style={{ color: "#a7a9be", fontSize: "15px" }}>
-          Consolidado de compras propias por categoria y estado.
-        </p>
+          <div>
+            <h1
+              style={{
+                fontSize: "clamp(2rem, 4vw, 3.4rem)",
+                lineHeight: 1.1,
+                background: "linear-gradient(135deg, #fffffe, #a8a4e6)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                marginBottom: "8px",
+              }}
+            >
+              Pedidos de {user?.nombre || "cliente"}
+            </h1>
+            <p style={{ color: "#a7a9be", fontSize: "15px" }}>
+              Consolidado de compras propias por categoria y estado.
+            </p>
+          </div>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              background: "rgba(83, 74, 183, 0.15)",
+              border: "0.5px solid rgba(168, 164, 230, 0.3)",
+              borderRadius: "10px",
+              color: "#a8a4e6",
+              padding: "10px 18px",
+              fontSize: "13px",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1,
+              transition: "all 0.2s",
+            }}
+          >
+            <RefreshCw
+              size={14}
+              style={{
+                animation: loading ? "spin 1s linear infinite" : "none",
+              }}
+            />
+            {loading ? "Actualizando..." : "Refrescar pedidos"}
+          </button>
+        </div>
       </header>
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
 
       <section
         style={{
@@ -52,8 +97,8 @@ function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
         className="summary-grid"
       >
         <Metric label="Pedidos" value={orderIds.size} />
-        <Metric label="Solicitados" value={activeOrderIds.size} />
-        <Metric label="Total filtrado" value={formatCurrency(total)} />
+        <Metric label="Productos pedidos" value={rows.length} />
+        <Metric label="Total gastado" value={formatCurrency(total)} />
       </section>
 
       <section
@@ -116,7 +161,9 @@ function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
               />
               <select
                 value={filters.category}
-                onChange={(event) => onFilterChange("category", event.target.value)}
+                onChange={(event) =>
+                  onFilterChange("category", event.target.value)
+                }
               >
                 <option value="">Categoria</option>
                 {categorias.map((category) => (
@@ -127,7 +174,9 @@ function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
               </select>
               <select
                 value={filters.status}
-                onChange={(event) => onFilterChange("status", event.target.value)}
+                onChange={(event) =>
+                  onFilterChange("status", event.target.value)
+                }
               >
                 <option value="">Estado</option>
                 {estados.map((status) => (
@@ -153,7 +202,16 @@ function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.length ? (
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      style={{ textAlign: "center", color: "#a7a9be" }}
+                    >
+                      Cargando pedidos...
+                    </td>
+                  </tr>
+                ) : rows.length ? (
                   rows.map((row, index) => (
                     <tr key={`${row.id_pedido}-${row.id_producto}-${index}`}>
                       <td>{index + 1}</td>
@@ -169,7 +227,9 @@ function ClientReport({ rows, chartData, user, filters, onFilterChange }) {
                       <td>{row.cantidad}</td>
                       <td>{formatCurrency(row.valor)}</td>
                       <td>
-                        <span className={`status-pill ${row.estado}`}>
+                        <span
+                          className={`status-pill ${row.estado?.toLowerCase()}`}
+                        >
                           {row.estado}
                         </span>
                       </td>
@@ -204,13 +264,17 @@ function SearchBox({ value, onChange }) {
 }
 
 function DateRangeFilter({ mode, value, onModeChange, onValueChange }) {
-  const inputType = mode === "week" ? "week" : mode === "month" ? "month" : "number";
+  const inputType =
+    mode === "week" ? "week" : mode === "month" ? "month" : "number";
   const placeholder =
     mode === "year" ? "Ano" : mode === "month" ? "Mes" : "Semana";
 
   return (
     <div className="date-range-filter">
-      <select value={mode} onChange={(event) => onModeChange(event.target.value)}>
+      <select
+        value={mode}
+        onChange={(event) => onModeChange(event.target.value)}
+      >
         <option value="">Periodo</option>
         <option value="week">Semana</option>
         <option value="month">Mes</option>
