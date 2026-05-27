@@ -80,7 +80,7 @@ function Hero({ session, productCount }) {
         }}
       >
         {session?.rol === "empleado"
-          ? "Informes, ventas y consolidados."
+          ? "Bienvenido, Administrador"
           : phrases[index]}
       </div>
 

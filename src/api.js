@@ -65,10 +65,10 @@ export const getOrders = () => api("/api/orders");
 
 export const getEmployeeOrders = () => api("/api/orders/employee");
 
-export const updateOrderStatus = (idPedido, idEstado) =>
+export const updateOrderStatus = (idPedido, idEstado, idEmpleado) =>
   api(`/api/orders/${idPedido}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ id_estado: idEstado }),
+    body: JSON.stringify({ id_estado: idEstado, id_empleado: idEmpleado }),
   });
 
 export const getAuthors = () => api("/api/authors");

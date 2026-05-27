@@ -183,11 +183,15 @@ function App() {
   };
 
   // Reemplaza este UUID con el id real del estado "Cancelado" en tu tabla Estados de Neon
-  const ID_ESTADO_CANCELADO = "REEMPLAZA_CON_UUID_CANCELADO";
+  const ID_ESTADO_CANCELADO = "d2500d13-b5c8-4015-8900-ad66dd337c02";
 
   const handleCancelOrder = async (idPedido) => {
     try {
-      await updateOrderStatus(idPedido, ID_ESTADO_CANCELADO);
+      await updateOrderStatus(
+        idPedido,
+        ID_ESTADO_CANCELADO,
+        session.id_empleado,
+      );
       showNotice("Pedido cancelado correctamente.");
       await fetchEmployeeOrders();
     } catch (error) {

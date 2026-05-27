@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import OrderChart from "./OrderChart";
 import {
   AlertTriangle,
   Ban,
+  BarChart2,
   BookOpen,
   ChevronLeft,
   ChevronRight,
@@ -41,7 +43,8 @@ function AdminPanel({
 }) {
   const [confirmRow, setConfirmRow] = useState(null);
   const [cancelledPage, setCancelledPage] = useState(1);
-  const [activeTab, setActiveTab] = useState("pedidos"); // "pedidos" | "libros"
+  const [activeTab, setActiveTab] = useState("pedidos");
+  const [chartModal, setChartModal] = useState(null); // "activos" | "cancelados" | null
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -197,6 +200,13 @@ function AdminPanel({
           cursor: pointer; transition: all 0.2s;
         }
         .edit-btn:hover { background: rgba(83,74,183,0.25); }
+        .chart-btn {
+          display: flex; align-items: center; gap: 5px;
+          background: rgba(127,119,221,0.12); border: 0.5px solid rgba(127,119,221,0.3);
+          border-radius: 7px; color: #a8a4e6; padding: 6px 12px; font-size: 12px;
+          cursor: pointer; transition: all 0.2s;
+        }
+        .chart-btn:hover { background: rgba(127,119,221,0.25); }
         .modal-overlay {
           position: fixed; inset: 0; z-index: 1000;
           background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
@@ -241,6 +251,20 @@ function AdminPanel({
         }
         .stock-input:focus { border-color: rgba(168,164,230,0.5); }
       `}</style>
+
+      {/* Modal informe gráfico */}
+      {chartModal && (
+        <OrderChart
+          rows={chartModal === "activos" ? rows : cancelledRows || []}
+          title={
+            chartModal === "activos"
+              ? "Informe gráfico — Pedidos activos"
+              : "Informe gráfico — Pedidos cancelados"
+          }
+          variant={chartModal}
+          onClose={() => setChartModal(null)}
+        />
+      )}
 
       {/* Modal cancelar pedido */}
       {confirmRow && (
@@ -288,6 +312,7 @@ function AdminPanel({
             }}
             className="report-layout"
           >
+            {/* Tabla pedidos activos */}
             <article
               style={{
                 background: "rgba(255,255,255,0.035)",
@@ -318,30 +343,45 @@ function AdminPanel({
                     </p>
                   </div>
                 </div>
-                <div className="admin-filters">
-                  <SearchBox
-                    value={filters.search}
-                    onChange={(value) => onFilterChange("search", value)}
-                  />
-                  <DateRangeFilter
-                    mode={filters.dateMode}
-                    value={filters.dateValue}
-                    onModeChange={(value) => {
-                      onFilterChange("dateMode", value);
-                      onFilterChange("dateValue", "");
-                    }}
-                    onValueChange={(value) =>
-                      onFilterChange("dateValue", value)
-                    }
-                  />
-                  <input
-                    type="text"
-                    placeholder="Cliente"
-                    value={filters.client}
-                    onChange={(event) =>
-                      onFilterChange("client", event.target.value)
-                    }
-                  />
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    className="chart-btn"
+                    onClick={() => setChartModal("activos")}
+                  >
+                    <BarChart2 size={13} /> Ver informe gráfico
+                  </button>
+                  <div className="admin-filters">
+                    <SearchBox
+                      value={filters.search}
+                      onChange={(value) => onFilterChange("search", value)}
+                    />
+                    <DateRangeFilter
+                      mode={filters.dateMode}
+                      value={filters.dateValue}
+                      onModeChange={(value) => {
+                        onFilterChange("dateMode", value);
+                        onFilterChange("dateValue", "");
+                      }}
+                      onValueChange={(value) =>
+                        onFilterChange("dateValue", value)
+                      }
+                    />
+                    <input
+                      type="text"
+                      placeholder="Cliente"
+                      value={filters.client}
+                      onChange={(event) =>
+                        onFilterChange("client", event.target.value)
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -430,7 +470,7 @@ function AdminPanel({
             </article>
 
             <ReportChart
-              title="Ventas por categoria"
+              title="Pedidos por categoria"
               subtitle="Porcentaje sobre el valor vendido en pedidos activos."
               data={chartData}
               variant="bars"
@@ -453,19 +493,32 @@ function AdminPanel({
                   borderBottom: "0.5px solid rgba(220,38,38,0.1)",
                   display: "flex",
                   alignItems: "center",
+                  justifyContent: "space-between",
                   gap: "10px",
+                  flexWrap: "wrap",
                 }}
               >
-                <XCircle size={18} color="#f87171" />
-                <div>
-                  <h2 style={{ fontSize: "18px", color: "#f87171" }}>
-                    Pedidos cancelados
-                  </h2>
-                  <p style={{ color: "#6b6d80", fontSize: "12px" }}>
-                    {cancelledRows?.length || 0} registros
-                  </p>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "10px" }}
+                >
+                  <XCircle size={18} color="#f87171" />
+                  <div>
+                    <h2 style={{ fontSize: "18px", color: "#f87171" }}>
+                      Pedidos cancelados
+                    </h2>
+                    <p style={{ color: "#6b6d80", fontSize: "12px" }}>
+                      {cancelledRows?.length || 0} registros
+                    </p>
+                  </div>
                 </div>
+                <button
+                  className="chart-btn"
+                  onClick={() => setChartModal("cancelados")}
+                >
+                  <BarChart2 size={13} /> Ver informe gráfico
+                </button>
               </div>
+
               <div style={{ overflowX: "auto" }}>
                 <table className="centauri-table">
                   <thead>
@@ -507,6 +560,7 @@ function AdminPanel({
                   </tbody>
                 </table>
               </div>
+
               {totalCancelledPages > 1 && (
                 <footer
                   style={{
@@ -615,7 +669,6 @@ function BookManager() {
 
   return (
     <section>
-      {/* Modal editar stock */}
       {editingBook && (
         <div className="modal-overlay">
           <div className="modal-box">
