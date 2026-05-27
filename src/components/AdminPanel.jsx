@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import OrderChart from "./OrderChart";
+import OrderChart from "./Orderchart";
 import {
   AlertTriangle,
   Ban,
